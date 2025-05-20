@@ -31,7 +31,7 @@ type PKCS7 struct {
 	raw          interface{}
 }
 
-type contentInfo struct {
+type ContentInfo struct {
 	ContentType asn1.ObjectIdentifier
 	Content     asn1.RawValue `asn1:"explicit,optional,tag:0"`
 }
@@ -53,12 +53,13 @@ var (
 	oidAttributeContentType   = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 3}
 	oidAttributeMessageDigest = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 4}
 	oidAttributeSigningTime   = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 5}
+	oidEnvelopedPKCS10        = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 22, 1}
 )
 
 type signedData struct {
 	Version                    int                        `asn1:"default:1"`
 	DigestAlgorithmIdentifiers []pkix.AlgorithmIdentifier `asn1:"set"`
-	ContentInfo                contentInfo
+	ContentInfo                ContentInfo
 	Certificates               rawCertificates        `asn1:"optional,tag:0"`
 	CRLs                       []pkix.CertificateList `asn1:"optional,tag:1"`
 	SignerInfos                []signerInfo           `asn1:"set"`
@@ -123,7 +124,7 @@ func Parse(data []byte) (p7 *PKCS7, err error) {
 	if len(data) == 0 {
 		return nil, errors.New("pkcs7: input data is empty")
 	}
-	var info contentInfo
+	var info ContentInfo
 	der, err := ber2der(data)
 	if err != nil {
 		return nil, err
@@ -301,8 +302,8 @@ func getHashForOID(oid asn1.ObjectIdentifier) (crypto.Hash, error) {
 	switch {
 	case oid.Equal(oidDigestAlgorithmSHA1):
 		return crypto.SHA1, nil
-  case oid.Equal(oidSHA256):
-    return crypto.SHA256, nil
+	case oid.Equal(oidSHA256):
+		return crypto.SHA256, nil
 	}
 	return crypto.Hash(0), ErrUnsupportedAlgorithm
 }
@@ -547,7 +548,7 @@ func NewSignedData(data []byte) (*SignedData, error) {
 	if err != nil {
 		return nil, err
 	}
-	ci := contentInfo{
+	ci := ContentInfo{
 		ContentType: oidData,
 		Content:     asn1.RawValue{Class: 2, Tag: 0, Bytes: content, IsCompound: true},
 	}
@@ -674,7 +675,7 @@ func (sd *SignedData) AddCertificate(cert *x509.Certificate) {
 // Detach removes content from the signed data struct to make it a detached signature.
 // This must be called right before Finish()
 func (sd *SignedData) Detach() {
-	sd.sd.ContentInfo = contentInfo{ContentType: oidData}
+	sd.sd.ContentInfo = ContentInfo{ContentType: oidData}
 }
 
 // Finish marshals the content and its signers
@@ -684,7 +685,7 @@ func (sd *SignedData) Finish() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	outer := contentInfo{
+	outer := ContentInfo{
 		ContentType: oidSignedData,
 		Content:     asn1.RawValue{Class: 2, Tag: 0, Bytes: inner, IsCompound: true},
 	}
@@ -746,7 +747,7 @@ func DegenerateCertificate(cert []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	emptyContent := contentInfo{ContentType: oidData}
+	emptyContent := ContentInfo{ContentType: oidData}
 	sd := signedData{
 		Version:      1,
 		ContentInfo:  emptyContent,
@@ -757,7 +758,7 @@ func DegenerateCertificate(cert []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	signedContent := contentInfo{
+	signedContent := ContentInfo{
 		ContentType: oidSignedData,
 		Content:     asn1.RawValue{Class: 2, Tag: 0, Bytes: content, IsCompound: true},
 	}
@@ -883,7 +884,7 @@ func encryptDESCBC(content []byte) ([]byte, *encryptedContentInfo, error) {
 // value is EncryptionAlgorithmDESCBC. To use a different algorithm, change the
 // value before calling Encrypt(). For example:
 //
-//     ContentEncryptionAlgorithm = EncryptionAlgorithmAES128GCM
+//	ContentEncryptionAlgorithm = EncryptionAlgorithmAES128GCM
 //
 // TODO(fullsailor): Add support for encrypting content with other algorithms
 func Encrypt(content []byte, recipients []*x509.Certificate) ([]byte, error) {
@@ -941,7 +942,7 @@ func Encrypt(content []byte, recipients []*x509.Certificate) ([]byte, error) {
 	}
 
 	// Prepare outer payload structure
-	wrapper := contentInfo{
+	wrapper := ContentInfo{
 		ContentType: oidEnvelopedData,
 		Content:     asn1.RawValue{Class: 2, Tag: 0, IsCompound: true, Bytes: innerContent},
 	}
