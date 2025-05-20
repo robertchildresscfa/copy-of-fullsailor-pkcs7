@@ -56,7 +56,7 @@ var (
 	oidEnvelopedPKCS10        = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 22, 1}
 )
 
-type signedData struct {
+type SignedDataInternal struct {
 	Version                    int                        `asn1:"default:1"`
 	DigestAlgorithmIdentifiers []pkix.AlgorithmIdentifier `asn1:"set"`
 	ContentInfo                ContentInfo
@@ -149,7 +149,7 @@ func Parse(data []byte) (p7 *PKCS7, err error) {
 }
 
 func parseSignedData(data []byte) (*PKCS7, error) {
-	var sd signedData
+	var sd SignedDataInternal
 	asn1.Unmarshal(data, &sd)
 	certs, err := sd.Certificates.Parse()
 	if err != nil {
@@ -512,7 +512,7 @@ func unmarshalAttribute(attrs []attribute, attributeType asn1.ObjectIdentifier, 
 
 // UnmarshalSignedAttribute decodes a single attribute from the signer info
 func (p7 *PKCS7) UnmarshalSignedAttribute(attributeType asn1.ObjectIdentifier, out interface{}) error {
-	sd, ok := p7.raw.(signedData)
+	sd, ok := p7.raw.(SignedDataInternal)
 	if !ok {
 		return errors.New("pkcs7: payload is not signedData content")
 	}
@@ -525,7 +525,7 @@ func (p7 *PKCS7) UnmarshalSignedAttribute(attributeType asn1.ObjectIdentifier, o
 
 // SignedData is an opaque data structure for creating signed data payloads
 type SignedData struct {
-	sd            signedData
+	SDI           SignedDataInternal
 	certs         []*x509.Certificate
 	messageDigest []byte
 }
@@ -558,12 +558,12 @@ func NewSignedData(data []byte) (*SignedData, error) {
 	h := crypto.SHA1.New()
 	h.Write(data)
 	md := h.Sum(nil)
-	sd := signedData{
+	sd := SignedDataInternal{
 		ContentInfo:                ci,
 		Version:                    1,
 		DigestAlgorithmIdentifiers: []pkix.AlgorithmIdentifier{digAlg},
 	}
-	return &SignedData{sd: sd, messageDigest: md}, nil
+	return &SignedData{SDI: sd, messageDigest: md}, nil
 }
 
 type attributes struct {
@@ -633,7 +633,7 @@ func (attrs *attributes) ForMarshaling() ([]attribute, error) {
 // AddSigner signs attributes about the content and adds certificate to payload
 func (sd *SignedData) AddSigner(cert *x509.Certificate, pkey crypto.PrivateKey, config SignerInfoConfig) error {
 	attrs := &attributes{}
-	attrs.Add(oidAttributeContentType, sd.sd.ContentInfo.ContentType)
+	attrs.Add(oidAttributeContentType, sd.SDI.ContentInfo.ContentType)
 	attrs.Add(oidAttributeMessageDigest, sd.messageDigest)
 	attrs.Add(oidAttributeSigningTime, time.Now())
 	for _, attr := range config.ExtraSignedAttributes {
@@ -663,7 +663,7 @@ func (sd *SignedData) AddSigner(cert *x509.Certificate, pkey crypto.PrivateKey, 
 	}
 	// create signature of signed attributes
 	sd.certs = append(sd.certs, cert)
-	sd.sd.SignerInfos = append(sd.sd.SignerInfos, signer)
+	sd.SDI.SignerInfos = append(sd.SDI.SignerInfos, signer)
 	return nil
 }
 
@@ -675,13 +675,13 @@ func (sd *SignedData) AddCertificate(cert *x509.Certificate) {
 // Detach removes content from the signed data struct to make it a detached signature.
 // This must be called right before Finish()
 func (sd *SignedData) Detach() {
-	sd.sd.ContentInfo = ContentInfo{ContentType: oidData}
+	sd.SDI.ContentInfo = ContentInfo{ContentType: oidData}
 }
 
 // Finish marshals the content and its signers
 func (sd *SignedData) Finish() ([]byte, error) {
-	sd.sd.Certificates = marshalCertificates(sd.certs)
-	inner, err := asn1.Marshal(sd.sd)
+	sd.SDI.Certificates = marshalCertificates(sd.certs)
+	inner, err := asn1.Marshal(sd.SDI)
 	if err != nil {
 		return nil, err
 	}
@@ -748,7 +748,7 @@ func DegenerateCertificate(cert []byte) ([]byte, error) {
 		return nil, err
 	}
 	emptyContent := ContentInfo{ContentType: oidData}
-	sd := signedData{
+	sd := SignedDataInternal{
 		Version:      1,
 		ContentInfo:  emptyContent,
 		Certificates: rawCert,
